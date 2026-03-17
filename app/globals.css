@@ -4,20 +4,69 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #1f2937;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-light: #ede9fe;
+  /* Status tag colors (pill + circle) */
+  --status-active: #10b981;
+  --status-active-bg: #d1fae5;
+  --status-contacted: #3b82f6;
+  --status-contacted-bg: #dbeafe;
+  --status-responded: #8b5cf6;
+  --status-responded-bg: #ede9fe;
+  --status-in-discussion: #f59e0b;
+  --status-in-discussion-bg: #fef3c7;
+  --status-confirmed: #059669;
+  --status-confirmed-bg: #d1fae5;
+  --status-declined: #6b7280;
+  --status-declined-bg: #f3f4f6;
+  --status-not-contacted: #94a3b8;
+  --status-not-contacted-bg: #f1f5f9;
+  --status-error: #dc2626;
+  --status-error-bg: #fee2e2;
+  --status-queued: #6366f1;
+  --status-queued-bg: #e0e7ff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0f172a;
+    --foreground: #f1f5f9;
+    --muted: #94a3b8;
+    --border: #334155;
+    --accent-light: #4c1d95;
   }
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-colors;
+    background-color: var(--accent);
+  }
+  .btn-primary:hover {
+    background-color: var(--accent-hover);
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors;
+    border-color: var(--border);
+    background: #fff;
+    color: var(--foreground);
+  }
+  .btn-secondary:hover {
+    @apply bg-gray-50;
+  }
+  .input-search {
+    @apply w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 py-2 pl-10 pr-4 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-200 dark:focus:ring-violet-800 focus:border-violet-500;
+  }
 }
 
 @layer utilities {

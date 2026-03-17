@@ -1,0 +1,308 @@
+2.2 Supabase client utilities
+lib/supabase/client.ts (browser-side):
+
+ts
+'use client';
+
+import { createBrowserClient } from '@supabase/ssr';
+
+export const supabaseClient = () =>
+  createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+lib/supabase/serverClient.ts (server-side):
+
+ts
+import { createClient } from '@supabase/supabase-js';
+
+export const supabaseServer = () =>
+  createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+2.3 Nodemailer + template utilities
+lib/email/mailer.ts:
+
+ts
+import nodemailer from 'nodemailer';
+
+export const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+  pool: true,
+  maxConnections: 3,
+  maxMessages: Infinity,
+});
+
+export async function sendEmail({
+  to,
+  subject,
+  html,
+  text,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+}) {
+  return transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to,
+    subject,
+    html,
+    text,
+  });
+}
+lib/email/templates.ts:
+
+ts
+export function renderTemplate(
+  template: string,
+  vars: { name?: string; company?: string }
+) {
+  return template
+    .replace(/{{\s*name\s*}}/g, vars.name ?? '')
+    .replace(/{{\s*company\s*}}/g, vars.company ?? '');
+}
+2.4 /api/contacts routes (example)
+app/api/contacts/route.ts:
+
+ts
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseServer } from '@/lib/supabase/serverClient';
+
+export async function GET(req: NextRequest) {
+  const supabase = supabaseServer();
+  const { searchParams } = new URL(req.url);
+  const status = searchParams.get('status');
+  const category = searchParams.get('category');
+  const search = searchParams.get('search');
+  const bucketId = searchParams.get('bucketId');
+
+  let query = supabase
+    .from('contacts')
+    .select('*, contact_buckets(bucket_id), buckets(*)', { count: 'exact' })
+    .order('created_at', { ascending: false });
+
+  if (status) query = query.eq('status', status);
+  if (category) query = query.eq('category', category);
+  if (search) query = query.ilike('company_name', `%${search}%`);
+  // bucket filter can be done via rpc or a separate join query
+
+  const { data, error } = await query;
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json(data);
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const supabase = supabaseServer();
+
+  const { data, error } = await supabase.from('contacts').insert(body).select().single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json(data);
+}
+app/api/contacts/[id]/route.ts:
+
+ts
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseServer } from '@/lib/supabase/serverClient';
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const body = await req.json();
+  const supabase = supabaseServer();
+
+  const { data, error } = await supabase
+    .from('contacts')
+    .update(body)
+    .eq('id', params.id)
+    .select()
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json(data);
+}
+2.5 /api/email/send-due route
+app/api/email/send-due/route.ts:
+
+ts
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseServer } from '@/lib/supabase/serverClient';
+import { sendEmail } from '@/lib/email/mailer';
+import { renderTemplate } from '@/lib/email/templates';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+const BATCH_LIMIT = 50;
+
+export async function POST(_req: NextRequest) {
+  const supabase = supabaseServer();
+  const now = new Date().toISOString();
+
+  const { data: events, error } = await supabase
+    .from('email_events')
+    .select('*')
+    .eq('status', 'queued')
+    .lte('scheduled_at', now)
+    .limit(BATCH_LIMIT);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!events || events.length === 0) {
+    return NextResponse.json({ processed: 0 });
+  }
+
+  const results = [];
+  for (const event of events) {
+    const { data: contact, error: contactError } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('id', event.contact_id)
+      .single();
+
+    if (contactError || !contact) {
+      await supabase
+        .from('email_events')
+        .update({ status: 'error', error_message: contactError?.message ?? 'Contact not found' })
+        .eq('id', event.id);
+      results.push({ id: event.id, status: 'error' });
+      continue;
+    }
+
+    const { data: template, error: tmplError } = await supabase
+      .from('email_templates')
+      .select('*')
+      .eq('id', event.template_id)
+      .single();
+
+    if (tmplError || !template) {
+      await supabase
+        .from('email_events')
+        .update({ status: 'error', error_message: tmplError?.message ?? 'Template not found' })
+        .eq('id', event.id);
+      results.push({ id: event.id, status: 'error' });
+      continue;
+    }
+
+    const subject = renderTemplate(template.subject_template, {
+      name: contact.name,
+      company: contact.company_name,
+    });
+
+    const body = renderTemplate(template.body_template, {
+      name: contact.name,
+      company: contact.company_name,
+    });
+
+    try {
+      await sendEmail({
+        to: contact.email,
+        subject,
+        html: body,
+      });
+
+      await supabase
+        .from('email_events')
+        .update({ status: 'sent', sent_at: new Date().toISOString() })
+        .eq('id', event.id);
+
+      results.push({ id: event.id, status: 'sent' });
+    } catch (e: any) {
+      await supabase
+        .from('email_events')
+        .update({ status: 'error', error_message: e?.message ?? 'Send failed' })
+        .eq('id', event.id);
+      results.push({ id: event.id, status: 'error' });
+    }
+  }
+
+  return NextResponse.json({ processed: events.length, results });
+}
+2.6 Minimal Contacts page skeleton
+app/contacts/page.tsx:
+
+tsx
+import { supabaseServer } from '@/lib/supabase/serverClient';
+import ContactsTable from '@/components/contacts/ContactsTable';
+
+export const dynamic = 'force-dynamic';
+
+export default async function ContactsPage() {
+  const supabase = supabaseServer();
+  const { data: contacts } = await supabase
+    .from('contacts')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold mb-4">Contacts</h1>
+      <ContactsTable initialContacts={contacts ?? []} />
+    </div>
+  );
+}
+components/contacts/ContactsTable.tsx:
+
+tsx
+'use client';
+
+import { useState } from 'react';
+
+type Contact = {
+  id: string;
+  name: string | null;
+  title: string | null;
+  company_name: string | null;
+  email: string | null;
+  status: string | null;
+  category: string | null;
+};
+
+export default function ContactsTable({
+  initialContacts,
+}: {
+  initialContacts: Contact[];
+}) {
+  const [contacts] = useState<Contact[]>(initialContacts);
+
+  return (
+    <table className="min-w-full border text-sm">
+      <thead>
+        <tr className="bg-gray-50">
+          <th className="border px-2 py-1 text-left">Name</th>
+          <th className="border px-2 py-1 text-left">Title</th>
+          <th className="border px-2 py-1 text-left">Company</th>
+          <th className="border px-2 py-1 text-left">Email</th>
+          <th className="border px-2 py-1 text-left">Category</th>
+          <th className="border px-2 py-1 text-left">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {contacts?.map((c) => (
+          <tr key={c.id}>
+            <td className="border px-2 py-1">{c.name}</td>
+            <td className="border px-2 py-1">{c.title}</td>
+            <td className="border px-2 py-1">{c.company_name}</td>
+            <td className="border px-2 py-1">{c.email}</td>
+            <td className="border px-2 py-1">{c.category}</td>
+            <td className="border px-2 py-1">{c.status}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}

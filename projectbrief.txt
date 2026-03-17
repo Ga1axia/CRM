@@ -1,0 +1,451 @@
+1. Product Overview
+The Generator Cafe CRM is an internal web app for managing Buildathon outreach: sourcing, organizing, and contacting sponsors and partners with automated, templated email sequences and a visual outreach pipeline. It runs as a single Next.js app (frontend + API) deployed on Vercel, with Supabase for data and auth, and Gmail SMTP for email sending.
+
+2. Goals & Non‑Goals
+Goals
+Centralize all outreach contacts in one CRM (Supabase).
+​
+
+Track status across buckets (Buildathon Sponsors, Corporate/Tool, Educational, SMBs, etc.).
+
+Send personalized batch emails directly from the app using Gmail SMTP and Nodemailer.
+
+Support simple multi-step sequences (e.g., Step 1 initial ping, Step 2 follow-up after X days).
+
+Import existing Excel/CSV contacts.
+
+Non‑Goals
+No deliverability analytics beyond “sent / error” for now (no opens/clicks).
+
+No complex email warmup, domain rotation, or full-fledged marketing automation.
+
+No paid infra beyond Vercel + Supabase + an existing Gmail account.
+
+3. Tech Stack
+Frontend / API: Next.js 14 (App Router) in TypeScript, deployed on Vercel (Hobby).
+
+Database + Auth: Supabase (Postgres + Supabase Auth) free tier.
+
+Email: Nodemailer using Gmail SMTP + App Password (single sender identity).
+
+Client libraries:
+
+@supabase/supabase-js for client/server access.
+​
+
+nodemailer for email.
+
+xlsx or papaparse for import.
+
+Deployment: Environment variables on Vercel for Supabase keys and Gmail SMTP.
+
+4. Data Model (Supabase)
+Create the following tables in Supabase.
+
+4.1 contacts
+id (uuid, pk, default uuid_generate_v4)
+
+created_at (timestamptz)
+
+updated_at (timestamptz)
+
+name (text)
+
+title (text)
+
+company_name (text)
+
+company_domain (text, nullable)
+
+email (text)
+
+linkedin_url (text)
+
+category (text)
+
+Enum-ish string: buildathon_sponsor, generator_partner, educational_partner, corporate_tool, financial_smb, vc_pitchathon
+
+tier (text) — free-form (e.g., Gold, Silver, TBD).
+
+status (text)
+
+not_contacted, contacted, responded, in_discussion, confirmed, declined
+
+notes (text)
+
+4.2 buckets
+id (uuid, pk)
+
+name (text) – e.g., “Anthropic”, “OpenAI”, “Harvard i-Labs”.
+
+type (text) – same category strings as above or free-form.
+
+4.3 contact_buckets (many-to-many)
+id (uuid, pk)
+
+contact_id (uuid, fk → contacts.id)
+
+bucket_id (uuid, fk → buckets.id)
+
+4.4 email_templates
+id (uuid, pk)
+
+created_at (timestamptz)
+
+name (text) – internal label, e.g., “Tool Sponsor – Initial Outreach”.
+
+subject_template (text) – supports {{name}}, {{company}}.
+
+body_template (text) – text/HTML with the same placeholders.
+
+category (text, nullable) – optional filter; e.g., corporate_tool, educational_partner.
+
+4.5 email_sequences
+id (uuid, pk)
+
+name (text) – “Tool Sponsor 2-step”, “Educational 3-step”.
+
+description (text)
+
+category (text, nullable)
+
+4.6 email_sequence_steps
+id (uuid, pk)
+
+sequence_id (uuid, fk → email_sequences.id)
+
+step_number (int) – 1, 2, 3…
+
+template_id (uuid, fk → email_templates.id)
+
+delay_days (int) – days after previous step to send this step (0 for step 1).
+
+4.7 email_events
+id (uuid, pk)
+
+created_at (timestamptz)
+
+contact_id (uuid, fk → contacts.id)
+
+sequence_id (uuid, fk)
+
+step_number (int)
+
+template_id (uuid, fk)
+
+status (text) – queued, sent, error
+
+error_message (text, nullable)
+
+sent_at (timestamptz, nullable)
+
+Roughly aligns with typical CRM/email activity logging.
+​
+
+5. Key User Flows & Features
+5.1 Authentication
+Only internal team members access the CRM.
+
+Use Supabase Auth (email link or password) with basic role flag.
+
+On the frontend, check auth state; redirect unauthenticated users to /login.
+​
+
+5.2 Contacts List & Filters
+Page: /contacts
+
+Features:
+
+Table view of contacts, paginated.
+
+Filters:
+
+Category
+
+Status
+
+Company name search (substring)
+
+Bucket (multi-select)
+
+Row actions:
+
+Edit contact (inline modal).
+
+View email history (shows email_events).
+
+5.3 Pipeline View
+Page: /pipeline
+
+Kanban columns:
+
+Not Contacted, Contacted, Responded, In Discussion, Confirmed, Declined
+
+Cards:
+
+Name, Title, Company, key bucket chips.
+
+Drag-and-drop:
+
+Moving a card between columns updates contacts.status.
+
+5.4 Buckets & Company View
+Page: /buckets
+
+List all buckets.
+
+Clicking one opens bucket detail: list of contacts assigned, quick add existing contact to bucket.
+
+Page: /company/[companyName]
+
+Filter contacts by company_name = [companyName].
+
+Action: “Add new contact for this company.”
+
+5.5 Import Contacts (CSV/XLSX)
+Page: /import
+
+Flow:
+
+Upload CSV/XLSX with columns: Name, Title, Company, Email, LinkedIn, Category, Tier, Status, Notes.
+
+Backend parses, map columns → model, preview table, then confirm import.
+
+On confirm: bulk insert into contacts via Supabase server-side client.
+
+6. Email Automation Design (Fully Automated)
+6.1 SMTP & Nodemailer Setup
+Use a dedicated Gmail account (e.g., generator.outreach@…) with an App Password.
+
+Environment variables on Vercel:
+
+SMTP_HOST=smtp.gmail.com
+
+SMTP_PORT=587
+
+SMTP_USER=…@gmail.com
+
+SMTP_PASS=<app_password>
+
+SMTP_FROM="Generator Outreach <…@gmail.com>"
+
+Node-only utility (not edge):
+
+ts
+// lib/email/mailer.ts
+import nodemailer from 'nodemailer';
+
+export const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+  pool: true,
+  maxConnections: 3,
+  maxMessages: Infinity,
+});
+Use pooled SMTP so bursts of ~50–100 emails are efficient while staying within Gmail limits.
+
+6.2 Template Rendering
+Simple placeholder engine:
+
+Supported placeholders: {{name}}, {{company}}.
+
+Utility:
+
+ts
+export function renderTemplate(
+  template: string,
+  vars: { name?: string; company?: string }
+) {
+  return template
+    .replace(/{{\s*name\s*}}/g, vars.name ?? '')
+    .replace(/{{\s*company\s*}}/g, vars.company ?? '');
+}
+7. API Design (Next.js Route Handlers)
+Use route handlers under app/api/.
+
+7.1 Contacts
+GET /api/contacts
+
+Query params: status, category, bucketId, search.
+
+Returns paginated list of contacts.
+
+POST /api/contacts
+
+Create a new contact.
+
+PATCH /api/contacts/:id
+
+Update contact fields (status, notes, etc.).
+
+7.2 Import
+POST /api/import
+
+Body: multipart form with file, or JSON rows: ContactInput[].
+
+parses CSV/XLSX server-side, writes to Supabase.
+
+7.3 Email Templates
+GET /api/email-templates
+
+POST /api/email-templates
+
+PATCH /api/email-templates/:id
+
+Simple CRUD for internal-only template management.
+
+7.4 Email Sequences
+GET /api/email-sequences
+
+POST /api/email-sequences
+
+GET /api/email-sequences/:id
+
+POST /api/email-sequences/:id/launch
+
+Body: filter criteria (category, bucketId, status, contactIds override).
+
+Logic:
+
+Compute contacts to enroll.
+
+For each contact and each sequence step:
+
+Create email_events with status = 'queued', step_number, sequence_id, template_id.
+
+Determine scheduled send time:
+
+Step 1: now (or immediate).
+
+Step N: now + sum of delay_days up to step N.
+
+For step 1 events whose scheduled time <= now, send immediately; others picked up by scheduler.
+
+7.5 Email Sending Endpoint
+POST /api/email/send-due
+
+Cron-invoked or manually triggered.
+
+Logic:
+
+Find email_events where:
+
+status = 'queued'
+
+scheduled_at <= now (add this column in email_events).
+
+Limit batch size (e.g., 50 per call to avoid Gmail flags).
+
+For each event:
+
+Fetch contact, template.
+
+Render subject/body.
+
+Call transporter.sendMail({ from, to: contact.email, subject, text/html }).
+
+On success: set status = 'sent', sent_at = now.
+
+On error: set status = 'error', error_message = ....
+
+You can trigger this via:
+
+Vercel cron jobs hitting /api/email/send-due, or
+
+A manual “Run due emails” button in the UI that calls this route.
+
+8. UI for Email Automation
+8.1 Launch Sequence Modal (from Contacts List)
+Button: “Launch Email Sequence”
+
+Opens modal:
+
+Select sequence (dropdown).
+
+Define filter: category, bucket(s), status.
+
+Show result count (e.g., “45 contacts match”).
+
+Confirm: calls POST /api/email-sequences/:id/launch with filters.
+
+8.2 Sequence Monitor
+Page: /sequences/[id]
+
+Show:
+
+Steps: template + delay_days.
+
+Stats: total enrolled, sent, errors.
+
+Table of email_events with:
+
+Contact, step, status, sent_at, error_message.
+
+9. Security & Limits
+All API routes check Supabase Auth session (server-side) before performing actions.
+​
+
+Use service role key only on server (never in client) for bulk writes.
+
+Add basic throttling:
+
+Max contacts per sequence launch (e.g., 200).
+
+Max due emails per /send-due run (e.g., 50).
+
+Gmail caveats:
+
+Use a dedicated account.
+
+Avoid sending hundreds at once; keep to tens per batch.
+
+10. Implementation Milestones (for Cursor “one-shot”)
+You can structure branches/commits like:
+
+Project & Stack Setup
+
+Next.js app, Supabase client, auth skeleton.
+
+Env vars wired.
+
+DB Schema & Supabase Migrations
+
+Create tables described above.
+
+Contacts CRUD + Filters
+
+/contacts page, table, filters, edit modal.
+
+/pipeline kanban.
+
+Import Endpoint + UI
+
+/api/import and /import page.
+
+Email Templates & Sequences
+
+Templates CRUD UI.
+
+Sequence builder UI.
+
+Nodemailer + SMTP Integration
+
+transporter util, /api/email/send-due route.
+
+End-to-end “Send test email” button.
+
+Launch Sequence Flow
+
+/api/email-sequences/:id/launch + UI.
+
+Stats/monitoring page.
+
+Polish & Guardrails
+
+Error states, toasts, small batch limits, logging.
+
