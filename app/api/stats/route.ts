@@ -36,8 +36,26 @@ export async function GET() {
     contactsByStatus[s] = (contactsByStatus[s] ?? 0) + 1;
   });
 
-  const contactIds = [...new Set((recentEvents ?? []).map((e: { contact_id: string }) => e.contact_id))];
-  const sequenceIds = [...new Set((recentEvents ?? []).map((e: { sequence_id: string }) => e.sequence_id).filter(Boolean))];
+  // Avoid spreading `Set` (can fail under older TS target configs).
+  const contactIds: string[] = [];
+  const seenContactIds: Record<string, true> = {};
+  for (const e of recentEvents ?? []) {
+    const id = (e as { contact_id?: string }).contact_id;
+    if (id && !seenContactIds[id]) {
+      seenContactIds[id] = true;
+      contactIds.push(id);
+    }
+  }
+
+  const sequenceIds: string[] = [];
+  const seenSequenceIds: Record<string, true> = {};
+  for (const e of recentEvents ?? []) {
+    const id = (e as { sequence_id?: string | null }).sequence_id;
+    if (id && !seenSequenceIds[id]) {
+      seenSequenceIds[id] = true;
+      sequenceIds.push(id);
+    }
+  }
   const { data: contactsList } = contactIds.length > 0
     ? await supabase.from('contacts').select('id, name, email, company_name').in('id', contactIds)
     : { data: [] };
