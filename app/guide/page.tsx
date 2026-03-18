@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 export const metadata = {
   title: 'Setup guide | Generator CRM',
-  description: 'Connect the CRM to your Supabase and Gmail account',
+  description: 'Connect the CRM to your Supabase project; users add Brevo SMTP in Settings',
 };
 
 export default function GuidePage() {
@@ -20,7 +20,7 @@ export default function GuidePage() {
           Setup guide
         </h1>
         <p className="text-gray-600 dark:text-gray-400 mb-10">
-          Connect this CRM to your own Supabase project and Gmail so your team can use the deployed app with your data and email.
+          Connect this CRM to your own Supabase project. Sign-in uses Supabase Auth; each user adds their Brevo SMTP credentials in Settings to send emails from their account.
         </p>
 
         <div className="space-y-10 text-gray-700 dark:text-gray-300">
@@ -67,27 +67,10 @@ export default function GuidePage() {
 
           <section>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-              4. Set up Gmail for sending email
+              4. Add environment variables to the deployed app
             </h2>
             <p className="mb-3">
-              The CRM sends emails (e.g. from sequences) via Gmail. Use a dedicated account (e.g. <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">outreach@yourdomain.com</code> or a Gmail address).
-            </p>
-            <ol className="list-decimal list-inside space-y-2 ml-2">
-              <li>Enable <strong>2-Step Verification</strong> on that Google account (required for App Passwords).</li>
-              <li>In Google Account → <strong>Security → 2-Step Verification → App passwords</strong>, create a new app password for “Mail”.</li>
-              <li>Copy the 16-character password. This will be used as <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">SMTP_PASS</code> — never use your normal Gmail password.</li>
-            </ol>
-            <p className="mt-3">
-              You will need: the Gmail address, the App Password, and a “From” display name (e.g. <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">"Generator Outreach &lt;outreach@gmail.com&gt;"</code>).
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-              5. Add environment variables to the deployed app
-            </h2>
-            <p className="mb-3">
-              The CRM is already deployed on Vercel. To connect it to <em>your</em> Supabase and Gmail, the project’s environment variables must be set. If you are the Vercel project owner:
+              The CRM is deployed on Vercel. To connect it to <em>your</em> Supabase project, set these environment variables. If you are the Vercel project owner:
             </p>
             <ol className="list-decimal list-inside space-y-2 ml-2 mb-4">
               <li>Open the project on <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline">vercel.com</a>.</li>
@@ -106,16 +89,23 @@ export default function GuidePage() {
                   <tr><td className="py-2 pr-4 font-mono">NEXT_PUBLIC_SUPABASE_URL</td><td className="py-2">Your Supabase Project URL</td></tr>
                   <tr><td className="py-2 pr-4 font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</td><td className="py-2">Supabase anon public key</td></tr>
                   <tr><td className="py-2 pr-4 font-mono">SUPABASE_SERVICE_ROLE_KEY</td><td className="py-2">Supabase service_role key (keep secret)</td></tr>
-                  <tr><td className="py-2 pr-4 font-mono">SMTP_HOST</td><td className="py-2">smtp.gmail.com</td></tr>
-                  <tr><td className="py-2 pr-4 font-mono">SMTP_PORT</td><td className="py-2">587</td></tr>
-                  <tr><td className="py-2 pr-4 font-mono">SMTP_USER</td><td className="py-2">Your Gmail address</td></tr>
-                  <tr><td className="py-2 pr-4 font-mono">SMTP_PASS</td><td className="py-2">Gmail App Password (16 chars)</td></tr>
-                  <tr><td className="py-2 pr-4 font-mono">SMTP_FROM</td><td className="py-2">e.g. "Your Name &lt;you@gmail.com&gt;"</td></tr>
                 </tbody>
               </table>
             </div>
             <p className="mt-4">
-              After saving, trigger a <strong>redeploy</strong> (Deployments → … → Redeploy) so the new variables take effect. If someone else manages the Vercel project, send them this list and your values (via a secure channel) so they can add the variables.
+              After saving, trigger a <strong>redeploy</strong> (Deployments → … → Redeploy). No SMTP env vars are required: each user adds their own <strong>Brevo</strong> SMTP credentials in the app under <strong>Settings</strong> so emails are sent from their Brevo account.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+              5. Set up Brevo (per user)
+            </h2>
+            <p className="mb-3">
+              Each user who will send emails must have a <a href="https://www.brevo.com" target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline">Brevo</a> account. In Brevo: <strong>SMTP &amp; API → SMTP</strong> — note your <strong>SMTP login</strong> (e.g. <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">xxx@smtp-brevo.com</code>) and create an <strong>SMTP key</strong>. Server: <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">smtp-relay.brevo.com</code>, port <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">587</code>.
+            </p>
+            <p>
+              After signing in to the CRM, go to <strong>Settings</strong> and enter your From email, optional From name, Brevo SMTP login, and Brevo SMTP key. Those credentials are stored on your account and used when you run &quot;Run due emails&quot;.
             </p>
           </section>
 
@@ -140,7 +130,7 @@ export default function GuidePage() {
             <ul className="list-disc list-inside space-y-1 ml-2">
               <li><strong>“Connect Timeout” or “fetch failed”</strong> — The app can’t reach Supabase. Confirm the Project URL has no trailing slash and your Supabase project isn’t paused. Check Vercel env vars were saved and a redeploy was done.</li>
               <li><strong>Can’t log in</strong> — Ensure the user exists under Supabase Authentication → Users and that <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">NEXT_PUBLIC_SUPABASE_URL</code> and <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> match that project.</li>
-              <li><strong>Emails not sending</strong> — Verify <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">SMTP_*</code> in Vercel, use the App Password (not your normal password), and that you’ve clicked “Run due emails” or have a cron hitting the send-due endpoint.</li>
+              <li><strong>Emails not sending</strong> — Go to <strong>Settings</strong> and add your Brevo SMTP login and SMTP key. Use a verified sender as From email. Then run “Run due emails” on the sequence page (or use a cron that calls the send-due API).</li>
             </ul>
           </section>
         </div>

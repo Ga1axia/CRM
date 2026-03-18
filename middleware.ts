@@ -34,7 +34,7 @@ export async function middleware(request: NextRequest) {
 
     await supabase.auth.getUser();
 
-    if (pathname === '/login' || pathname === '/guide') {
+    if (pathname === '/login' || pathname === '/signup' || pathname === '/guide') {
       return response;
     }
 

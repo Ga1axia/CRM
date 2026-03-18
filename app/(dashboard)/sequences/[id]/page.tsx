@@ -47,6 +47,8 @@ export default async function SequenceDetailPage({ params }: Props) {
     <div className="p-6">
       <SequenceBuilder
         sequenceId={id}
+        initialName={sequence.name ?? ''}
+        initialDescription={sequence.description ?? ''}
         initialSteps={steps ?? []}
         templates={templates ?? []}
       />

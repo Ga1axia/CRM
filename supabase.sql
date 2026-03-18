@@ -137,3 +137,24 @@ create policy "Allow all for authenticated" on public.email_sequence_steps
 
 create policy "Allow all for authenticated" on public.email_events
   for all using (auth.role() = 'authenticated');
+
+-- USER EMAIL SETTINGS (per-user Brevo SMTP: users add their own Brevo API/SMTP keys)
+-- If you had an older Gmail-based version of this table, run: DROP TABLE IF EXISTS public.user_email_settings;
+create table if not exists public.user_email_settings (
+  id uuid primary key default uuid_generate_v4(),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  from_email text not null,
+  from_name text,
+  brevo_smtp_login text not null,
+  brevo_smtp_key text not null,
+  unique(user_id)
+);
+
+create index if not exists idx_user_email_settings_user_id on public.user_email_settings (user_id);
+
+alter table public.user_email_settings enable row level security;
+
+create policy "Users can manage own email settings" on public.user_email_settings
+  for all using (auth.uid() = user_id);

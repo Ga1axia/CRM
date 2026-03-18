@@ -63,15 +63,26 @@ export async function PATCH(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   if (Array.isArray(_steps)) {
-    await supabase.from('email_sequence_steps').delete().eq('sequence_id', id);
-    if (_steps.length > 0) {
-      const stepRows = _steps.map((s: { step_number: number; template_id: string; delay_days: number }) => ({
+    const stepsToInsert = _steps
+      .map((s: { step_number: number; template_id: string; delay_days: number }, i: number) => ({
         sequence_id: id,
-        step_number: s.step_number,
+        step_number: (s.step_number ?? i + 1),
         template_id: s.template_id,
         delay_days: s.delay_days ?? 0,
-      }));
-      await supabase.from('email_sequence_steps').insert(stepRows);
+      }))
+      .filter((s) => s.template_id && typeof s.template_id === 'string' && s.template_id.length > 0);
+    const hasInvalidStep = _steps.length > 0 && stepsToInsert.length < _steps.length;
+    if (hasInvalidStep) {
+      return NextResponse.json(
+        { error: 'Each step must have a template selected.' },
+        { status: 400 }
+      );
+    }
+    const { error: deleteError } = await supabase.from('email_sequence_steps').delete().eq('sequence_id', id);
+    if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    if (stepsToInsert.length > 0) {
+      const { error: insertError } = await supabase.from('email_sequence_steps').insert(stepsToInsert);
+      if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
   }
   return NextResponse.json(data);
