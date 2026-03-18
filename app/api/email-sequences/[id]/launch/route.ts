@@ -45,7 +45,15 @@ export async function POST(
   if (stepsError || !steps?.length) return NextResponse.json({ error: 'Sequence or steps not found' }, { status: 400 });
 
   const now = new Date();
-  const events: { contact_id: string; sequence_id: string; step_number: number; template_id: string; status: string; scheduled_at: string }[] = [];
+  const events: {
+    contact_id: string;
+    sequence_id: string;
+    step_number: number;
+    template_id: string;
+    launched_by_user_id: string;
+    status: string;
+    scheduled_at: string;
+  }[] = [];
 
   for (const contact of contactList) {
     let delayDays = 0;
@@ -58,6 +66,7 @@ export async function POST(
         sequence_id: sequenceId,
         step_number: step.step_number,
         template_id: step.template_id,
+        launched_by_user_id: user.id,
         status: 'queued',
         scheduled_at: scheduled.toISOString(),
       });

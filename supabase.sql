@@ -81,6 +81,7 @@ create table if not exists public.email_events (
   created_at timestamptz default now(),
   contact_id uuid references public.contacts(id) on delete cascade,
   sequence_id uuid references public.email_sequences(id) on delete set null,
+  launched_by_user_id uuid references auth.users(id) on delete set null,
   step_number int,
   template_id uuid references public.email_templates(id) on delete set null,
   status text not null default 'queued', -- queued, sent, error
@@ -89,7 +90,12 @@ create table if not exists public.email_events (
   scheduled_at timestamptz not null default now()
 );
 
+-- If you already had email_events from an older deployment, add the column.
+alter table public.email_events
+  add column if not exists launched_by_user_id uuid;
+
 create index if not exists idx_email_events_contact_id on public.email_events (contact_id);
+create index if not exists idx_email_events_launched_by_user_id on public.email_events (launched_by_user_id);
 create index if not exists idx_email_events_status_scheduled_at on public.email_events (status, scheduled_at);
 
 -- BASIC TRIGGER TO UPDATE updated_at ON contacts
